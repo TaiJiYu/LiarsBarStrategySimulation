@@ -164,10 +164,8 @@ class TacticAI:
         self.switch = True
         return True
 
+    # 全是真牌直接出
     def _tactic_all_real(self):
-        """
-        全是真牌直接出
-        """
         for card in self.cards:
             if card != self.game.key_card:
                 return False
