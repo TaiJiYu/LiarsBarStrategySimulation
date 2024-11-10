@@ -29,3 +29,12 @@ def log_close():
     _log.close()
 
 
+def switch_func(condition, func1, func1_args, fun2, fun2_args):
+    if type(func1_args) is not tuple:
+        func1_args = tuple([func1_args])
+    if type(fun2_args) is not tuple:
+        fun2_args = tuple([fun2_args])
+    if condition:
+        func1(*func1_args)
+    else:
+        fun2(*fun2_args)

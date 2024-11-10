@@ -192,71 +192,79 @@ def tactic_11(ai, game, is_first):
     game.drop(card_list, ai)
 
 
-# 有1/n的概率质疑，有1-1/n的概率出假牌，n位当前人数
+# 策略十三：优先级最高，若都是真牌，则不质疑尽快出
+# 真牌。若只有2人有牌且只有假牌，则质疑
+# 若只有2人有牌且都是假牌且率先出牌，则
+# 出1假牌，
+# 优先级其次，上家出3张必质疑
+# 优先级再次，若剩2人有牌且下家质疑概
+# 只快
+# 率小于 12，
+# 尽快先出假牌，没假牌再与
+# 出真牌
+# 优先级再再次，若下家质疑频率大于等于1/2
+# (此条件是这一条策略的前提，之后若什么
+# 条件都要且此条件)则出1张真，若没真则质
+# 若率先出牌且没真则出1张伫
+# 若下家质疑频率小于 1/2，则尽快出真牌，再
+# 尽快出假牌
 @provider("莫之随")
 def tactic_12(ai, game, is_first):
-    if ai.is_all_real():
-        ai.drop_cards(min(ai.get_real_card_num(), 2), True)
-        return
     if game.get_ai_count() == 2 and ai.is_all_fake():
-        if is_first:
-            ai.drop_cards(1, False)
-        else:
-            game.deny(ai)
+        utils.switch_func(is_first, ai.drop_cards, (1, False), game.deny, ai)
         return
-    a = game.get_pre_ai_first_drop_deny_real(ai)
-    b = game.get_next_ai_deny_rate(ai)
-    n = game.get_ai_count()
+    if len(game.card_last) == 3:
+        game.deny(ai)
+        return
+
+    def check_3(default_num):
+        ai.drop_cards(2 if game.get_next_ai_deny_3_rate(ai) == 1 and fake_card_num >= 2 else default_num, False)
+
+    fake_card_num = ai.get_fake_card_num()
     real_card_num = ai.get_real_card_num()
-    fake_card_num = len(ai.cards) - real_card_num
-    if not is_first:
-        if game.epoch == 1:
-            if a < 1 / n or (a == 1 / n and ra.random() < 1 / n):
-                game.deny(ai)
-                return
-        else:
-            if ra.random() < 1 / n:
-                game.deny(ai)
-                return
-    if b < 1 / n:
-        if ai.is_all_real():
-            ai.drop_cards(min(ai.get_real_card_num(), 2), True)
-            return
-        ai.drop_cards(min(2, fake_card_num), False)
+    if game.get_ai_count() == 2 and game.get_next_ai_deny_rate(ai) < 0.5:
+        utils.switch_func(ai.is_all_real(), ai.drop_cards, (real_card_num, True), check_3, fake_card_num)
         return
-    else:
-        if real_card_num == 0:
-            ai.drop_cards(min(2, fake_card_num), False)
-        else:
-            ai.drop_cards(1, True)
+    utils.switch_func(game.get_next_ai_deny_rate(ai) >= 0.5,
+                      utils.switch_func, (
+                          ai.is_all_fake(), utils.switch_func, (is_first, check_3, 1, game.deny, ai), ai.drop_cards,
+                          (1, True)),
+                      utils.switch_func, (game.get_next_ai_deny_rate(ai) < 1 / game.get_ai_count(), utils.switch_func,
+                                          (fake_card_num != 0, check_3, fake_card_num, ai.drop_cards,
+                                           (real_card_num, True)),
+                                          utils.switch_func,
+                                          (real_card_num != 0, ai.drop_cards, (real_card_num, True), check_3,
+                                           fake_card_num)))
 
 
-# 根据GTO策略而来，出真牌收益R=K*min(3,real_num),出假牌收益F=(1-K)*min(3,fake_num),质疑收益:D=3-R-F
+# 策略十四：
 # 按收益最高的方式走
-@provider("需要白开")
+@provider("莫之随")
 def tactic_13(ai, game, is_first):
-    k = game.get_next_ai_deny_rate(ai)
-    real_num = ai.get_real_card_num()
-    fake_num = len(ai.cards) - real_num
-    r = k * min(3, real_num)
-    f = (1 - k) * min(3, fake_num)
-    d = 3 - r - f
-    if is_first:
-        if r > f and real_num > 0:
-            ai.drop_cards(real_num, True)
-        else:
-            ai.drop_cards(fake_num, False)
-    else:
-        max_ex = max(r, f, d)
-        if max_ex == d:
-            game.deny(ai)
-        elif max_ex == r and real_num > 0:
-            ai.drop_cards(real_num, True)
-        else:
-            ai.drop_cards(fake_num, False)
+    n = game.get_ai_count()
+    a = game.get_next_ai_deny_rate(ai)
+    fake_card_num = ai.get_fake_card_num()
+    real_card_num = ai.get_real_card_num()
+    utils.switch_func(n == 3 or n == 4,
+                      utils.switch_func, (a < 1 / n, utils.switch_func,
+                                          (fake_card_num != 0, ai.drop_fake_cards, fake_card_num,
+                                           ai.drop_real_cards, real_card_num),
+                                          utils.switch_func,
+                                          (real_card_num != 0, ai.drop_real_cards, real_card_num,
+                                           ai.drop_fake_cards, fake_card_num)),
+                      utils.switch_func, (a < 0.5, utils.switch_func,
+                                          (ai.is_all_fake(), utils.switch_func,
+                                           (is_first, ai.drop_fake_cards, 1, game.deny, ai),
+                                           utils.switch_func,
+                                           (fake_card_num != 0, ai.drop_fake_cards, fake_card_num, ai.drop_real_cards,
+                                            real_card_num)),
+                                          utils.switch_func,
+                                          (real_card_num != 0, ai.drop_real_cards, 1, utils.switch_func,
+                                           (is_first, ai.drop_fake_cards, 1, game.deny, ai))
+                                          ))
 
 
-# 两轮打完，第一回合先出2张牌，尽可能是真牌，第二回合出剩下的3张牌
+# 策略十五：两轮打完，第一回合先出2张牌，尽可能是真牌，第二回合出剩下的3张牌
 @provider("我又挺行了")
 def tactic_14(ai, game, is_first):
     if len(ai.cards) <= 3:
@@ -273,7 +281,7 @@ def tactic_14(ai, game, is_first):
             game.drop(card_list, ai)
 
 
-# 随机混合各种策略
+# 策略十六：随机混合各种策略
 @provider("只是顆洋蔥")
 def tactic_15(ai, game, is_first):
     tactics = All_Tactic.copy()
@@ -301,5 +309,4 @@ All_Tactic = [
 ]
 
 No_Assist_Tactic = [
-    tactic_12
 ]

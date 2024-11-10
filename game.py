@@ -70,8 +70,8 @@ class Mind:
     def write(self, now_round, tactics_data):
         if not IS_TEST:
             self.write_win_count(tactics_data)  # 记录按手牌未出局的信息
-        if now_round % 100 != 0:
-            return
+        # if now_round % 100 != 0:
+        #     return
         for index, f in enumerate(self.files[:6]):
             f.write("第{}回合,".format(now_round) + self._get_csv_line(index, tactics_data) + "\n")
 
@@ -194,6 +194,8 @@ class TacticAI:
         self.now_has_real_card_count_max = 0  # 本轮次总共拥有的真牌数
         self.first_drop_deny_real_max = 0
         self.first_drop_deny_real_count = 0
+        self.deny_3_times = 0  # 质疑3张牌的次数
+        self.turn_3_times = 0  # 轮到该玩家时，上家出3张的次数
         # 统计信息
         self.champion_count = 0
         self.runner_count = 0
@@ -218,6 +220,12 @@ class TacticAI:
                 return False
         return True
 
+    def drop_real_cards(self, num):
+        self.drop_cards(num, True)
+
+    def drop_fake_cards(self,  num):
+        self.drop_cards(num, False)
+
     # 出指定数量的真牌或假牌
     def drop_cards(self, num, is_real):
         card_list = []
@@ -238,10 +246,19 @@ class TacticAI:
             return 0
         return self.first_drop_deny_real_count / self.first_drop_deny_real_max
 
+    def get_deny_3_rate(self):
+        if self.turn_3_times == 0:
+            return 0
+        return self.deny_3_times / self.turn_3_times
+
     def get_deny_rate(self):
         if self.turn_times == 0:
             return 0
         return self.deny_times / self.turn_times
+
+    # 获取假牌数量
+    def get_fake_card_num(self):
+        return len(self.cards) - self.get_real_card_num()
 
     # 获取真牌的数量
     def get_real_card_num(self):
@@ -266,6 +283,8 @@ class TacticAI:
         self.is_die = False
         self.turn_times = 0  # 新局开始时次数清空，作为其他玩家的陌生人开始游戏
         self.deny_times = 0
+        self.turn_3_times = 0
+        self.deny_3_times = 0
 
     def get_cards(self, *cards: Card):
         if self.is_die:
@@ -302,6 +321,8 @@ class TacticAI:
             self.game.fire_end_player(self)
             return False
         self.turn_times += 1
+        if len(self.game.card_last) == 3:
+            self.turn_3_times += 1
         if self.tactic not in ta.No_Assist_Tactic:
             if self._tactic_all_real():
                 return True
@@ -355,13 +376,26 @@ class Game:
             index = (index - 1) % len(self.ai_list)
         return 0
 
-    # 获取下家质疑概率
-    def get_next_ai_deny_rate(self, ai):
+    def get_next_ai(self, ai):
         index = (ai.player_index + 1) % len(self.ai_list)
         while index != ai.player_index:
             if self.ai_list[index].if_has_cards():
-                return self.ai_list[index].get_deny_rate()
+                return self.ai_list[index]
             index = (index + 1) % len(self.ai_list)
+        return None
+
+    # 获取下家质疑3张牌的概率
+    def get_next_ai_deny_3_rate(self, ai):
+        next_ai = self.get_next_ai(ai)
+        if next_ai is not None:
+            return next_ai.get_deny_3_rate()
+        return 0
+
+    # 获取下家质疑概率
+    def get_next_ai_deny_rate(self, ai):
+        next_ai = self.get_next_ai(ai)
+        if next_ai is not None:
+            return next_ai.get_deny_rate()
         return 0
 
     # 场上还有手牌的玩家
@@ -395,6 +429,8 @@ class Game:
         if self.card_last_from.turn_times == 1:
             self.card_last_from.first_drop_deny_real_max += 1
         deny_ai.deny_times += 1
+        if len(self.card_last) == 3:
+            deny_ai.deny_3_times += 1
         if self.key_card.check(self.card_last):
             deny_ai.fire()
             self.add_ais_real_card_win(deny_ai.player_index)
@@ -406,10 +442,11 @@ class Game:
         self.is_finish = True
 
     def fire_end_player(self, ai: TacticAI):
-        """只剩最后一个玩家时自己开枪"""
-        ai.fire()
-        self.add_ais_real_card_win(ai.player_index)
-        self.is_finish = True
+        """只剩最后一个玩家时自动质疑"""
+        self.deny(ai)
+        # ai.fire()
+        # self.add_ais_real_card_win(ai.player_index)
+        # self.is_finish = True
 
     def read_data(self):
         dirs = {}
@@ -457,6 +494,6 @@ log = utils.log
 TEST_ONE_TIME = config.TEST_ONE_TIME  # 仅测试到第一次打牌结束（有人开枪或者只剩一人未出完牌）
 IS_TEST = config.IS_TEST  # 当该值为False时会记录数据到文件，请注意
 
-mind = Mind(1000000)
+mind = Mind(100)
 mind.run()
 utils.log_close()
